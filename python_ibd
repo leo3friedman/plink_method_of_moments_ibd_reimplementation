@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+from src.cli import parse_args
+from src.naive import run_naive
+from src.optimized import run_optimized
+
+
+def main():
+    args = parse_args()
+
+    input_prefix = args.input
+    out_prefix = args.out
+
+    if args.naive:
+        run_naive(input_prefix, out_prefix)
+    else:
+        run_optimized(input_prefix, out_prefix)
+
+    print("Finished successfully.")
+
+
+if __name__ == "__main__":
+    main()
