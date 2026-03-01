@@ -87,14 +87,6 @@ def get_tmp_output_prefix(prefix: str = "test_output") -> str:
     return f"{tmpdir}/{prefix}"
 
 
-def assert_implementation_matches_plink(
-    input_prefix, output_prefix, ground_truth, implementation_fn
-):
-    implementation_fn(input_prefix, output_prefix)
-
-    assert_genome_data(ground_truth, f"{output_prefix}.genome")
-
-
 def assert_log_file_exists(out_prefix):
     assert os.path.exists(
         f"{out_prefix}.log"

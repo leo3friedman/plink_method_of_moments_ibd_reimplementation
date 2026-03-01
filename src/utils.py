@@ -1,5 +1,7 @@
-import pandas as pd
+import logging
 import os
+
+import pandas as pd
 
 GENOME_COLUMNS = [
     "FID1",
@@ -17,6 +19,49 @@ GENOME_COLUMNS = [
     "PPC",
     "RATIO",
 ]
+
+
+def setup_logger(output_prefix: str) -> logging.Logger:
+    """Configure the 'python_ibd' logger to write to {output_prefix}.log and stdout."""
+    filepath = f"{output_prefix}.log"
+    dir_name = os.path.dirname(filepath)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+
+    logger = logging.getLogger("python_ibd")
+    logger.setLevel(logging.DEBUG)
+    logger.handlers.clear()
+    logger.propagate = False  # prevent double-printing via root logger
+
+    file_fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    fh = logging.FileHandler(filepath, mode="w")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(file_fmt)
+    logger.addHandler(fh)
+
+    # stdout only shows INFO+, with no timestamp — just the message
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(ch)
+
+    return logger
+
+
+def print_progress(current: int, total: int, bar_width: int = 40) -> None:
+    """Write an inline progress bar to stdout using carriage return."""
+    import sys
+
+    pct = (current + 1) / total
+    filled = int(bar_width * pct)
+    bar = "=" * filled + (">" if filled < bar_width else "") + " " * max(0, bar_width - filled - 1)
+    sys.stdout.write(f"\r  [{bar}] {pct * 100:5.1f}%  ({current + 1}/{total})")
+    sys.stdout.flush()
+    if current == total - 1:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
 
 def write_genome_file(output_prefix: str, result: pd.DataFrame):

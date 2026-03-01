@@ -1,9 +1,14 @@
-from bed_reader import open_bed
 import itertools
-from src.utils import GENOME_COLUMNS, write_genome_file, write_log_file
-import pandas as pd
+import logging
 import math
+
+from bed_reader import open_bed
 import numpy as np
+import pandas as pd
+
+from src.utils import GENOME_COLUMNS, print_progress, setup_logger, write_genome_file
+
+logger = logging.getLogger("python_ibd")
 
 
 def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
@@ -14,6 +19,9 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
 
     NUM_VARIANTS = genotypes.shape[1]
     NUM_INDIVIDUALS = genotypes.shape[0]
+
+    logger.info("Computing allele frequencies and global expected IBS counts...")
+    logger.debug("  %d variants, %d individuals", NUM_VARIANTS, NUM_INDIVIDUALS)
 
     # Step 1. For each SNP we precompute allele frequencies:
     # - X <- Sum reference allele count across all individuals
@@ -93,6 +101,8 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
         )
         cnt_poly += 1
 
+    logger.info("Done. %d polymorphic SNPs.", cnt_poly)
+
     # Step 3. Compute average expected counts of IBS states, see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4888
 
     avg_e00 = sum_e00 / cnt_poly if cnt_poly > 0 else 0.0
@@ -107,8 +117,12 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     # Results stored in matrix `result` where columns are individual 1 index, individual 2 index, Z0, Z1, Z2
 
     pairs = list(itertools.combinations(range(NUM_INDIVIDUALS), 2))
-    result = np.zeros((len(pairs), 5))
+    total_pairs = len(pairs)
+    logger.info("Computing pairwise IBD for %d pairs:", total_pairs)
+
+    result = np.zeros((total_pairs, 5))
     for pair_inx, (individual_1_idx, individual_2_idx) in enumerate(pairs):
+        print_progress(pair_inx, total_pairs)
         ibs_0_count = 0
         ibs_1_count = 0
         ibs_2_count = 0
@@ -189,16 +203,23 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_naive(input_prefix, out_prefix):
-    print("Running naive implementation...")
+    setup_logger(out_prefix)
+    logger.info("Running naive IBD | input=%s | out=%s", input_prefix, out_prefix)
+
+    logger.info("Reading %s.bed...", input_prefix)
     bed = open_bed(f"{input_prefix}.bed")
-    print("Finished opening .bed file")
     individual_ids = bed.iid
     family_ids = bed.fid
     genotypes = bed.read()
+    logger.info(
+        "Done. %d individuals, %d variants.",
+        genotypes.shape[0],
+        genotypes.shape[1],
+    )
 
-    print("Finished reading genotype data into memory, now computing IBD...")
     ibd_results = compute_ibd(genotypes)
-    print("Finished computing IBD, now writing output to file...")
+
+    logger.debug("Building result dataframe and writing output...")
     result = pd.DataFrame(
         columns=GENOME_COLUMNS,
         data=[
@@ -223,5 +244,4 @@ def run_naive(input_prefix, out_prefix):
     )
 
     write_genome_file(out_prefix, result)
-
-    write_log_file(out_prefix, "Naive implementation completed successfully.\n")
+    logger.info("Done. Output written to %s.genome and %s.log", out_prefix, out_prefix)

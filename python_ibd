@@ -16,8 +16,6 @@ def main():
     else:
         run_optimized(input_prefix, out_prefix)
 
-    print("Finished successfully.")
-
 
 if __name__ == "__main__":
     main()
