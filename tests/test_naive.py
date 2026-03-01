@@ -1,22 +1,26 @@
-import tempfile
 from src.naive import run_naive
-from tests.utils import validate_genome_data
-import os
+from tests.utils import (
+    assert_implementation_matches_plink,
+    assert_log_file_exists,
+    get_tmp_output_prefix,
+)
 
 
-def test_naive_matches_plink():
+def test_naive_matches_plink_on_subset():
     input_prefix = "data/subset"
     ground_truth = "data/plink.subset.genome"
+    out_prefix = get_tmp_output_prefix("naive_test_subset")
+    assert_implementation_matches_plink(
+        input_prefix, out_prefix, ground_truth, run_naive
+    )
+    assert_log_file_exists(out_prefix)
 
-    # create a temporary output file for the naive implementation
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_output_prefix = f"{tmpdir}/naive_test"
 
-    run_naive(input_prefix, tmp_output_prefix)
-
-    validate_genome_data(ground_truth, f"{tmp_output_prefix}.genome")
-
-    # validate log file exists
-    assert os.path.exists(
-        f"{tmp_output_prefix}.log"
-    ), "Expected log file to be generated but it does not exist"
+def test_naive_matches_plink_on_micro():
+    input_prefix = "data/micro"
+    ground_truth = "data/plink.micro.genome"
+    out_prefix = get_tmp_output_prefix("naive_test_micro")
+    assert_implementation_matches_plink(
+        input_prefix, out_prefix, ground_truth, run_naive
+    )
+    assert_log_file_exists(out_prefix)

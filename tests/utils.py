@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import tempfile
+import os
 
 
 def parse_genome_file(filepath: str) -> pd.DataFrame:
@@ -27,21 +29,23 @@ def parse_genome_file(filepath: str) -> pd.DataFrame:
 
 
 def calculate_r_squared(truth, target):
-    """Calculates the R^2 correlation between two lists of numbers."""
-    if len(truth) != len(target):
+    """R²^2 as coefficient of determination: 1 - SS_res / SS_tot."""
+    truth = np.array(truth, dtype=float)
+    target = np.array(target, dtype=float)
+
+    if len(truth) != len(target) or len(truth) == 0:
         return 0.0
 
-    correlation_matrix = np.corrcoef(np.array(truth), np.array(target))
-    r = correlation_matrix[0, 1]
+    ss_res = np.sum((truth - target) ** 2)
+    ss_tot = np.sum((truth - np.mean(truth)) ** 2)
 
-    # edge case, where truth or target is all 0s then correlation is not well defined=
-    if np.isnan(r):
-        r = 1.0 if all(x == 0 for x in truth) and all(x == 0 for x in target) else 0.0
+    if ss_tot == 0:
+        return 1.0 if ss_res == 0 else 0.0
 
-    return r**2
+    return 1.0 - ss_res / ss_tot
 
 
-def validate_genome_data(
+def assert_genome_data(
     truth_filepath: str, target_filepath: str, r_squared_threshold: float = 0.99
 ):
     """Helper to validate that the target output matches the ground truth"""
@@ -75,3 +79,23 @@ def validate_genome_data(
         assert (
             r_squared > r_squared_threshold
         ), f"R^2 for column {column} is {r_squared}, which is below the threshold of {r_squared_threshold}"
+
+
+def get_tmp_output_prefix(prefix: str = "test_output") -> str:
+    """Helper to generate a temporary output prefix for testing"""
+    tmpdir = tempfile.mkdtemp()
+    return f"{tmpdir}/{prefix}"
+
+
+def assert_implementation_matches_plink(
+    input_prefix, output_prefix, ground_truth, implementation_fn
+):
+    implementation_fn(input_prefix, output_prefix)
+
+    assert_genome_data(ground_truth, f"{output_prefix}.genome")
+
+
+def assert_log_file_exists(out_prefix):
+    assert os.path.exists(
+        f"{out_prefix}.log"
+    ), "Expected log file to be generated but it does not exist"
