@@ -19,3 +19,17 @@ def test_optimized_matches_plink_on_micro():
         r_squared_threshold=0.99,
     )
     assert_log_file_exists(out_prefix)
+
+
+def test_naive_matches_plink_on_subset():
+    input_prefix = "data/subset"
+    out_prefix = get_tmp_output_prefix("optimized_test_subset")
+    run_optimized(input_prefix, out_prefix)
+    ground_truth_filepath = "data/plink.subset.genome"
+    target_genome_filepath = f"{out_prefix}.genome"
+    assert_genome_data(
+        truth_filepath=ground_truth_filepath,
+        target_filepath=target_genome_filepath,
+        r_squared_threshold=0.99,
+    )
+    assert_log_file_exists(out_prefix)

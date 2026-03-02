@@ -48,7 +48,7 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
 
     pairs = list(itertools.combinations(range(NUM_INDIVIDUALS), 2))
     total_pairs = len(pairs)
-    logger.info("Computing pairwise IBD for %d pairs:", total_pairs)
+    logger.info("Done. Computing pairwise IBD for %d pairs:", total_pairs)
 
     result = np.zeros((total_pairs, 5))
     for pair_inx, (individual_1_idx, individual_2_idx) in enumerate(pairs):
@@ -80,16 +80,16 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
             result[pair_inx, 1] = individual_2_idx
             continue
 
-        sum_e00 = avg_e00 * S  # N(I=0 count | Z=0)
-        sum_e01 = avg_e01 * S  # N(I=1 count | Z=1)
-        sum_e02 = avg_e02 * S  # N(I=2 count | Z=2)
-        sum_e11 = avg_e11 * S  # N(I=1 count | Z=1)
-        sum_e12 = avg_e12 * S  # N(I=2 count | Z=1)
+        e00 = avg_e00 * S  # N(I=0 count | Z=0)
+        e01 = avg_e01 * S  # N(I=1 count | Z=1)
+        e02 = avg_e02 * S  # N(I=2 count | Z=2)
+        e11 = avg_e11 * S  # N(I=1 count | Z=1)
+        e12 = avg_e12 * S  # N(I=2 count | Z=1)
         e22 = 1.0 * S  # N(I=2 count | Z=2) = S
 
-        z0 = ibs_0_count / sum_e00 if sum_e00 > 0 else 0.0
-        z1 = (ibs_1_count - z0 * sum_e01) / sum_e11 if sum_e11 > 0 else 0.0
-        z2 = (ibs_2_count - z0 * sum_e02 - z1 * sum_e12) / e22 if e22 > 0 else 0.0
+        z0 = ibs_0_count / e00 if e00 > 0 else 0.0
+        z1 = (ibs_1_count - z0 * e01) / e11 if e11 > 0 else 0.0
+        z2 = (ibs_2_count - z0 * e02 - z1 * e12) / e22 if e22 > 0 else 0.0
 
         # Step 4. Apply bounding procedure
         z0, z1, z2 = bind_z_values(z0, z1, z2)
@@ -197,8 +197,6 @@ def compute_average_expected_counts(NUM_VARIANTS: int, variant_stats: dict) -> t
             + p * dqq_sq * dyy1
         )
         cnt_poly += 1
-
-    logger.info("Done. %d polymorphic SNPs.", cnt_poly)
 
     # Compute average expected counts of IBS states, see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4888
 

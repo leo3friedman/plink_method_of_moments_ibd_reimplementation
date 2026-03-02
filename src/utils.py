@@ -96,27 +96,30 @@ def write_log_file(output_prefix: str, content: str):
 def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=None):
     setup_logger(out_prefix)
     implementation_name = implementation_name or "unknown"
-    logger.info(
-        "Running %s IBD | input=%s | out=%s",
-        implementation_name,
+
+    logger.info("Running %s IBD...", implementation_name)
+    logger.debug(
+        "IBD calculation recieved parameters input prefix: '%s' and output prefix: '%s'",
         input_prefix,
         out_prefix,
     )
 
-    logger.info("Reading %s.bed...", input_prefix)
+    logger.info("Reading input files...")
+
     bed = open_bed(f"{input_prefix}.bed")
     individual_ids = bed.iid
     family_ids = bed.fid
     genotypes = bed.read()
-    logger.info(
-        "Done. %d individuals, %d variants.",
+
+    logger.info("Done. Finished reading input files.")
+    logger.debug(
+        "Input files contain %d individuals, %d variants.",
         genotypes.shape[0],
         genotypes.shape[1],
     )
 
     ibd_results = ibd_fn(genotypes)
 
-    logger.debug("Building result dataframe and writing output...")
     result = pd.DataFrame(
         columns=GENOME_COLUMNS,
         data=[
@@ -141,4 +144,4 @@ def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=Non
     )
 
     write_genome_file(out_prefix, result)
-    logger.info("Done. Output written to %s.genome and %s.log", out_prefix, out_prefix)
+    logger.info("Output written to %s.genome and %s.log", out_prefix, out_prefix)
