@@ -31,21 +31,116 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     # - q <- alternate allele frequency (q = Y / T)
     # variant_stats stores this information: variant_stats[snp_index] = { "ref_count": ..., "alt_count": ... }
 
-    variant_stats = {}
-    for variant_id in range(NUM_VARIANTS):
-        variant_stats[variant_id] = {"ref_count": 0, "alt_count": 0}
-        for sample_id in range(genotypes.shape[0]):
-            genotype_for_sample = genotypes[sample_id, variant_id]
-            if not math.isnan(genotype_for_sample):
-                if genotype_for_sample == 0:
-                    variant_stats[variant_id]["ref_count"] += 2
-                elif genotype_for_sample == 1:
-                    variant_stats[variant_id]["ref_count"] += 1
-                    variant_stats[variant_id]["alt_count"] += 1
-                elif genotype_for_sample == 2:
-                    variant_stats[variant_id]["alt_count"] += 2
+    variant_stats = compute_variant_stats(genotypes, NUM_VARIANTS)
 
-    # Step 2. Compute global expected counts of IBS states conditional on IBD states
+    # Step 2. Compute average global expected counts of IBS states conditional on IBD states
+
+    avg_e00, avg_e01, avg_e02, avg_e11, avg_e12 = compute_average_expected_counts(
+        NUM_VARIANTS, variant_stats
+    )
+
+    # Step 3. compute per individual pair IBD estimation
+    # Purcell et al. describes that the per pair N(I | Z) is computed only via variants where both individuals have non-missing genotypes:
+    # - pair specific  N(I | Z) <- gloabl expected P(IBS | IBD) average * S, where S is the count of non-missing SNPs for the pair of individuals
+    # Results stored in matrix `result` where columns are individual 1 index, individual 2 index, Z0, Z1, Z2
+
+    pairs = list(itertools.combinations(range(NUM_INDIVIDUALS), 2))
+    total_pairs = len(pairs)
+    logger.info("Computing pairwise IBD for %d pairs:", total_pairs)
+
+    result = np.zeros((total_pairs, 5))
+    for pair_inx, (individual_1_idx, individual_2_idx) in enumerate(pairs):
+        print_progress(pair_inx, total_pairs)
+        ibs_0_count = 0
+        ibs_1_count = 0
+        ibs_2_count = 0
+
+        for snp_index in range(NUM_VARIANTS):
+            g1 = genotypes[individual_1_idx, snp_index]
+            g2 = genotypes[individual_2_idx, snp_index]
+
+            if math.isnan(g1) or math.isnan(g2):
+                continue
+
+            diff = abs(g1 - g2)
+            if diff == 2:
+                ibs_0_count += 1  # opposite homozygotes: (0,2) or (2,0)
+            elif diff == 0:
+                ibs_2_count += 1  # same genotype: (0,0), (1,1) or (2,2)
+            else:
+                ibs_1_count += 1  # one allele shared: (0,1), (1,0), (1,2) or (2,1)
+
+        S = ibs_0_count + ibs_1_count + ibs_2_count
+
+        # We cannot compute IBD if individuals have no non-missing variants in common
+        if S == 0:
+            result[pair_inx, 0] = individual_1_idx
+            result[pair_inx, 1] = individual_2_idx
+            continue
+
+        sum_e00 = avg_e00 * S  # N(I=0 count | Z=0)
+        sum_e01 = avg_e01 * S  # N(I=1 count | Z=1)
+        sum_e02 = avg_e02 * S  # N(I=2 count | Z=2)
+        sum_e11 = avg_e11 * S  # N(I=1 count | Z=1)
+        sum_e12 = avg_e12 * S  # N(I=2 count | Z=1)
+        e22 = 1.0 * S  # N(I=2 count | Z=2) = S
+
+        z0 = ibs_0_count / sum_e00 if sum_e00 > 0 else 0.0
+        z1 = (ibs_1_count - z0 * sum_e01) / sum_e11 if sum_e11 > 0 else 0.0
+        z2 = (ibs_2_count - z0 * sum_e02 - z1 * sum_e12) / e22 if e22 > 0 else 0.0
+
+        # Step 4. Apply bounding procedure
+        z0, z1, z2 = bind_z_values(z0, z1, z2)
+
+        result[pair_inx, 0] = individual_1_idx
+        result[pair_inx, 1] = individual_2_idx
+        result[pair_inx, 2] = z0
+        result[pair_inx, 3] = z1
+        result[pair_inx, 4] = z2
+
+    return result
+
+
+def bind_z_values(z0, z1, z2):
+    """Helper function to apply the bounding procedure described in Purcell et al. 2007 to ensure valid IBD estimates."""
+
+    # Purcell et al. defines the following binding procedure to ensure valid probabilities:
+    # - If any Z value exceeds 1, clamp it to 1 and set the other two to 0
+    # - If any Z value is negative, set it to 0 and renormalize the other two to sum to 1
+
+    # clamp to 1 and 0 if any exceed 1
+    if z0 > 1:
+        z0, z1, z2 = 1.0, 0.0, 0.0
+    if z1 > 1:
+        z1, z0, z2 = 1.0, 0.0, 0.0
+    if z2 > 1:
+        z2, z0, z1 = 1.0, 0.0, 0.0
+
+    # renormalize if any are negative
+    if z0 < 0.0:
+        z0 = 0.0
+        z1_z2_sum = z1 + z2
+        if z1_z2_sum > 0:
+            z1 /= z1_z2_sum
+            z2 /= z1_z2_sum
+    if z1 < 0.0:
+        z1 = 0.0
+        z0_z2_sum = z0 + z2
+        if z0_z2_sum > 0:
+            z0 /= z0_z2_sum
+            z2 /= z0_z2_sum
+    if z2 < 0.0:
+        z2 = 0.0
+        z0_z1_sum = z0 + z1
+        if z0_z1_sum > 0:
+            z0 /= z0_z1_sum
+            z1 /= z0_z1_sum
+    return z0, z1, z2
+
+
+def compute_average_expected_counts(NUM_VARIANTS: int, variant_stats: dict) -> tuple:
+    """Helper function to compute the global expected counts of IBS states conditional on IBD states, used in the method of moments IBD estimation."""
+
     # Purcell et al. describes the following:
     # - N(I = i | Z = z) <- The global expected count of SNPs with IBS state I = i conditional on IBD state Z = z.
     # - N(I = i | Z = z) <- Computed via ∑_m P(IBS = i | IBD = z) over all SNPs m
@@ -103,103 +198,32 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
 
     logger.info("Done. %d polymorphic SNPs.", cnt_poly)
 
-    # Step 3. Compute average expected counts of IBS states, see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4888
+    # Compute average expected counts of IBS states, see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4888
 
     avg_e00 = sum_e00 / cnt_poly if cnt_poly > 0 else 0.0
     avg_e01 = sum_e01 / cnt_poly if cnt_poly > 0 else 0.0
     avg_e02 = sum_e02 / cnt_poly if cnt_poly > 0 else 0.0
     avg_e11 = sum_e11 / cnt_poly if cnt_poly > 0 else 0.0
     avg_e12 = sum_e12 / cnt_poly if cnt_poly > 0 else 0.0
+    return avg_e00, avg_e01, avg_e02, avg_e11, avg_e12
 
-    # Step 4. compute per individual pair IBD estimation
-    # Purcell et al. describes that the per pair N(I | Z) is computed only via variants where both individuals have non-missing genotypes:
-    # - pair specific  N(I | Z) <- gloabl expected P(IBS | IBD) average * S, where S is the count of non-missing SNPs for the pair of individuals
-    # Results stored in matrix `result` where columns are individual 1 index, individual 2 index, Z0, Z1, Z2
 
-    pairs = list(itertools.combinations(range(NUM_INDIVIDUALS), 2))
-    total_pairs = len(pairs)
-    logger.info("Computing pairwise IBD for %d pairs:", total_pairs)
-
-    result = np.zeros((total_pairs, 5))
-    for pair_inx, (individual_1_idx, individual_2_idx) in enumerate(pairs):
-        print_progress(pair_inx, total_pairs)
-        ibs_0_count = 0
-        ibs_1_count = 0
-        ibs_2_count = 0
-
-        for snp_index in range(NUM_VARIANTS):
-            g1 = genotypes[individual_1_idx, snp_index]
-            g2 = genotypes[individual_2_idx, snp_index]
-
-            if math.isnan(g1) or math.isnan(g2):
-                continue
-
-            diff = abs(g1 - g2)
-            if diff == 2:
-                ibs_0_count += 1  # opposite homozygotes: (0,2) or (2,0)
-            elif diff == 0:
-                ibs_2_count += 1  # same genotype: (0,0), (1,1) or (2,2)
-            else:
-                ibs_1_count += 1  # one allele shared: (0,1), (1,0), (1,2) or (2,1)
-
-        S = ibs_0_count + ibs_1_count + ibs_2_count
-
-        # We cannot compute IBD if individuals have no non-missing variants in common
-        if S == 0:
-            result[pair_inx, 0] = individual_1_idx
-            result[pair_inx, 1] = individual_2_idx
-            continue
-
-        sum_e00 = avg_e00 * S  # N(I=0 count | Z=0)
-        sum_e01 = avg_e01 * S  # N(I=1 count | Z=1)
-        sum_e02 = avg_e02 * S  # N(I=2 count | Z=2)
-        sum_e11 = avg_e11 * S  # N(I=1 count | Z=1)
-        sum_e12 = avg_e12 * S  # N(I=2 count | Z=1)
-        e22 = 1.0 * S  # N(I=2 count | Z=2) = S
-
-        z0 = ibs_0_count / sum_e00 if sum_e00 > 0 else 0.0
-        z1 = (ibs_1_count - z0 * sum_e01) / sum_e11 if sum_e11 > 0 else 0.0
-        z2 = (ibs_2_count - z0 * sum_e02 - z1 * sum_e12) / e22 if e22 > 0 else 0.0
-
-        # Step 5. Apply bounding procedure as described by purcell et al. to ensure valid probabilities:
-        # - If any Z value exceeds 1, clamp it to 1 and set the other two to 0
-        # - If any Z value is negative, set it to 0 and renormalize the other two to sum to 1
-
-        # clamp to 1 and 0 if any exceed 1
-        if z0 > 1:
-            z0, z1, z2 = 1.0, 0.0, 0.0
-        if z1 > 1:
-            z1, z0, z2 = 1.0, 0.0, 0.0
-        if z2 > 1:
-            z2, z0, z1 = 1.0, 0.0, 0.0
-
-        # renormalize if any are negative
-        if z0 < 0.0:
-            z0 = 0.0
-            z1_z2_sum = z1 + z2
-            if z1_z2_sum > 0:
-                z1 /= z1_z2_sum
-                z2 /= z1_z2_sum
-        if z1 < 0.0:
-            z1 = 0.0
-            z0_z2_sum = z0 + z2
-            if z0_z2_sum > 0:
-                z0 /= z0_z2_sum
-                z2 /= z0_z2_sum
-        if z2 < 0.0:
-            z2 = 0.0
-            z0_z1_sum = z0 + z1
-            if z0_z1_sum > 0:
-                z0 /= z0_z1_sum
-                z1 /= z0_z1_sum
-
-        result[pair_inx, 0] = individual_1_idx
-        result[pair_inx, 1] = individual_2_idx
-        result[pair_inx, 2] = z0
-        result[pair_inx, 3] = z1
-        result[pair_inx, 4] = z2
-
-    return result
+def compute_variant_stats(genotypes: np.ndarray, NUM_VARIANTS: int) -> dict:
+    """Helper function to compute allele counts for each variant, used in the method of moments IBD estimation."""
+    variant_stats = {}
+    for variant_id in range(NUM_VARIANTS):
+        variant_stats[variant_id] = {"ref_count": 0, "alt_count": 0}
+        for sample_id in range(genotypes.shape[0]):
+            genotype_for_sample = genotypes[sample_id, variant_id]
+            if not math.isnan(genotype_for_sample):
+                if genotype_for_sample == 0:
+                    variant_stats[variant_id]["ref_count"] += 2
+                elif genotype_for_sample == 1:
+                    variant_stats[variant_id]["ref_count"] += 1
+                    variant_stats[variant_id]["alt_count"] += 1
+                elif genotype_for_sample == 2:
+                    variant_stats[variant_id]["alt_count"] += 2
+    return variant_stats
 
 
 def run_naive(input_prefix, out_prefix):
