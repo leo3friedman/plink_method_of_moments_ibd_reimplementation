@@ -2,6 +2,9 @@ import logging
 import os
 
 import pandas as pd
+from bed_reader import open_bed
+
+logger = logging.getLogger("python_ibd")
 
 GENOME_COLUMNS = [
     "FID1",
@@ -56,7 +59,11 @@ def print_progress(current: int, total: int, bar_width: int = 40) -> None:
 
     pct = (current + 1) / total
     filled = int(bar_width * pct)
-    bar = "=" * filled + (">" if filled < bar_width else "") + " " * max(0, bar_width - filled - 1)
+    bar = (
+        "=" * filled
+        + (">" if filled < bar_width else "")
+        + " " * max(0, bar_width - filled - 1)
+    )
     sys.stdout.write(f"\r  [{bar}] {pct * 100:5.1f}%  ({current + 1}/{total})")
     sys.stdout.flush()
     if current == total - 1:
@@ -84,3 +91,54 @@ def write_log_file(output_prefix: str, content: str):
 
     with open(filepath, "w") as f:
         f.write(content)
+
+
+def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=None):
+    setup_logger(out_prefix)
+    implementation_name = implementation_name or "unknown"
+    logger.info(
+        "Running %s IBD | input=%s | out=%s",
+        implementation_name,
+        input_prefix,
+        out_prefix,
+    )
+
+    logger.info("Reading %s.bed...", input_prefix)
+    bed = open_bed(f"{input_prefix}.bed")
+    individual_ids = bed.iid
+    family_ids = bed.fid
+    genotypes = bed.read()
+    logger.info(
+        "Done. %d individuals, %d variants.",
+        genotypes.shape[0],
+        genotypes.shape[1],
+    )
+
+    ibd_results = ibd_fn(genotypes)
+
+    logger.debug("Building result dataframe and writing output...")
+    result = pd.DataFrame(
+        columns=GENOME_COLUMNS,
+        data=[
+            {
+                "FID1": family_ids[int(sample_idx1)],
+                "IID1": individual_ids[int(sample_idx1)],
+                "FID2": family_ids[int(sample_idx2)],
+                "IID2": individual_ids[int(sample_idx2)],
+                "RT": "UN",
+                "EZ": "NA",
+                "Z0": Z0,
+                "Z1": Z1,
+                "Z2": Z2,
+                "PI_HAT": Z1 / 2 + Z2,
+                "PHE": -1,
+                "DST": 0,
+                "PPC": 0,
+                "RATIO": 0,
+            }
+            for (sample_idx1, sample_idx2, Z0, Z1, Z2) in list(ibd_results)
+        ],
+    )
+
+    write_genome_file(out_prefix, result)
+    logger.info("Done. Output written to %s.genome and %s.log", out_prefix, out_prefix)

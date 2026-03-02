@@ -2,11 +2,13 @@ import itertools
 import logging
 import math
 
-from bed_reader import open_bed
 import numpy as np
 import pandas as pd
 
-from src.utils import GENOME_COLUMNS, print_progress, setup_logger, write_genome_file
+from src.utils import (
+    print_progress,
+    run_implementation,
+)
 
 logger = logging.getLogger("python_ibd")
 
@@ -227,45 +229,6 @@ def compute_variant_stats(genotypes: np.ndarray, NUM_VARIANTS: int) -> dict:
 
 
 def run_naive(input_prefix, out_prefix):
-    setup_logger(out_prefix)
-    logger.info("Running naive IBD | input=%s | out=%s", input_prefix, out_prefix)
-
-    logger.info("Reading %s.bed...", input_prefix)
-    bed = open_bed(f"{input_prefix}.bed")
-    individual_ids = bed.iid
-    family_ids = bed.fid
-    genotypes = bed.read()
-    logger.info(
-        "Done. %d individuals, %d variants.",
-        genotypes.shape[0],
-        genotypes.shape[1],
+    run_implementation(
+        compute_ibd, input_prefix, out_prefix, implementation_name="naive"
     )
-
-    ibd_results = compute_ibd(genotypes)
-
-    logger.debug("Building result dataframe and writing output...")
-    result = pd.DataFrame(
-        columns=GENOME_COLUMNS,
-        data=[
-            {
-                "FID1": family_ids[int(sample_idx1)],
-                "IID1": individual_ids[int(sample_idx1)],
-                "FID2": family_ids[int(sample_idx2)],
-                "IID2": individual_ids[int(sample_idx2)],
-                "RT": "UN",
-                "EZ": "NA",
-                "Z0": Z0,
-                "Z1": Z1,
-                "Z2": Z2,
-                "PI_HAT": Z1 / 2 + Z2,
-                "PHE": -1,
-                "DST": 0,
-                "PPC": 0,
-                "RATIO": 0,
-            }
-            for (sample_idx1, sample_idx2, Z0, Z1, Z2) in list(ibd_results)
-        ],
-    )
-
-    write_genome_file(out_prefix, result)
-    logger.info("Done. Output written to %s.genome and %s.log", out_prefix, out_prefix)
