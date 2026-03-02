@@ -3,7 +3,6 @@ import numpy as np
 import math
 
 from src.naive import (
-    compute_variant_stats,
     compute_average_expected_counts,
     bind_z_values,
 )
@@ -33,7 +32,7 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
 
     # Step 1. For each SNP we precompute allele frequencies. See naive.py for more implementation notes.
 
-    variant_stats = compute_variant_stats(genotypes, NUM_VARIANTS)
+    variant_stats = compute_variant_stats(genotypes)
 
     logger.debug("Done. Finished computing allele frequencies.")
 
@@ -42,7 +41,7 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     logger.info("Computing global expected IBS counts...")
 
     avg_e00, avg_e01, avg_e02, avg_e11, avg_e12 = compute_average_expected_counts(
-        NUM_VARIANTS, variant_stats
+        variant_stats
     )
 
     logger.debug("Done. Finished computing global expected IBS counts.")
@@ -125,6 +124,18 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     result[:, 4] = z2
 
     return result
+
+
+def compute_variant_stats(genotypes: np.ndarray):
+    """Helper function to compute allele frequencies and other variant stats for each SNP"""
+
+    non_missing = ~np.isnan(genotypes)
+    alt_counts = np.nansum(genotypes, axis=0).astype(int)  # sum down columns
+    ref_counts = (2 * non_missing.sum(axis=0) - alt_counts).astype(int)
+    return {
+        v: {"ref_count": int(ref_counts[v]), "alt_count": int(alt_counts[v])}
+        for v in range(genotypes.shape[1])
+    }
 
 
 def run_optimized(input_prefix, out_prefix):

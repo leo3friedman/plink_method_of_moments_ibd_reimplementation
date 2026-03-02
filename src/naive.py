@@ -33,12 +33,12 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     # - q <- alternate allele frequency (q = Y / T)
     # variant_stats stores this information: variant_stats[snp_index] = { "ref_count": ..., "alt_count": ... }
 
-    variant_stats = compute_variant_stats(genotypes, NUM_VARIANTS)
+    variant_stats = compute_variant_stats(genotypes)
 
     # Step 2. Compute average global expected counts of IBS states conditional on IBD states
 
     avg_e00, avg_e01, avg_e02, avg_e11, avg_e12 = compute_average_expected_counts(
-        NUM_VARIANTS, variant_stats
+        variant_stats
     )
 
     # Step 3. compute per individual pair IBD estimation
@@ -140,7 +140,7 @@ def bind_z_values(z0, z1, z2):
     return z0, z1, z2
 
 
-def compute_average_expected_counts(NUM_VARIANTS: int, variant_stats: dict) -> tuple:
+def compute_average_expected_counts(variant_stats: dict) -> tuple:
     """Helper function to compute the global expected counts of IBS states conditional on IBD states, used in the method of moments IBD estimation."""
 
     # Purcell et al. describes the following:
@@ -161,10 +161,10 @@ def compute_average_expected_counts(NUM_VARIANTS: int, variant_stats: dict) -> t
     sum_e12 = 0.0
     cnt_poly = 0  # count of polymorphic SNPs, used by PLINK 1.9 (ibd_prect) in per-indivual pair caluclations
 
-    for variant_id in range(NUM_VARIANTS):
+    for variant_stat in variant_stats.values():
         # attempt to match Purcell et al. then PLINK 1.9's naming conventions as much as possible, see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4849-L4866
-        X = variant_stats[variant_id]["ref_count"]  # ref count
-        Y = variant_stats[variant_id]["alt_count"]  # alt count
+        X = variant_stat["ref_count"]  # ref count
+        Y = variant_stat["alt_count"]  # alt count
         T = X + Y  # total variant count
 
         # Skip monomorphic SNPs (X == 0 or Y == 0) and SNPs with low count (T < 4), see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4846C2-L4846C56
@@ -208,10 +208,10 @@ def compute_average_expected_counts(NUM_VARIANTS: int, variant_stats: dict) -> t
     return avg_e00, avg_e01, avg_e02, avg_e11, avg_e12
 
 
-def compute_variant_stats(genotypes: np.ndarray, NUM_VARIANTS: int) -> dict:
+def compute_variant_stats(genotypes: np.ndarray) -> dict:
     """Helper function to compute allele counts for each variant, used in the method of moments IBD estimation."""
     variant_stats = {}
-    for variant_id in range(NUM_VARIANTS):
+    for variant_id in range(genotypes.shape[1]):
         variant_stats[variant_id] = {"ref_count": 0, "alt_count": 0}
         for sample_id in range(genotypes.shape[0]):
             genotype_for_sample = genotypes[sample_id, variant_id]
