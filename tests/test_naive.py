@@ -37,7 +37,7 @@ def test_naive_matches_plink_on_subset():
 
 def test_naive_matches_plink_on_full():
     ground_truth = "tests/fixtures/plink.full.genome"
-    target = "tests/fixtures/python_ibd.full.genome"  # use a fixed output prefix for the full test since it takes a long time to run
+    target = "tests/fixtures/python_ibd.naive.full.genome"  # use a fixed output prefix for the full test since it takes a long time to run
 
     assert_genome_data(
         truth_filepath=ground_truth,

@@ -33,3 +33,14 @@ def test_naive_matches_plink_on_subset():
         r_squared_threshold=0.99,
     )
     assert_log_file_exists(out_prefix)
+
+
+def test_optimized_matches_plink_on_full():
+    ground_truth = "tests/fixtures/plink.full.genome"
+    target = "tests/fixtures/python_ibd.optimized.full.genome"  # use a fixed output prefix for the full test since input file is too large to commit
+
+    assert_genome_data(
+        truth_filepath=ground_truth,
+        target_filepath=target,
+        r_squared_threshold=0.999,  # use a higher threshold for the full dataset since it has more pairs and thus less noise
+    )
