@@ -8,23 +8,6 @@ import sys
 
 logger = logging.getLogger("python_ibd")
 
-GENOME_COLUMNS = [
-    "FID1",
-    "IID1",
-    "FID2",
-    "IID2",
-    "RT",
-    "EZ",
-    "Z0",
-    "Z1",
-    "Z2",
-    "PI_HAT",
-    "PHE",
-    "DST",
-    "PPC",
-    "RATIO",
-]
-
 
 def setup_logger(output_prefix: str) -> logging.Logger:
     """Configure the 'python_ibd' logger to write to {output_prefix}.log and stdout."""
@@ -104,21 +87,13 @@ def write_genome_file(output_prefix: str, result: pd.DataFrame):
 
     # make file if does not exist, otherwise overwrite
     filepath = f"{output_prefix}.genome"
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    dir_name = os.path.dirname(filepath)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
 
     with open(filepath, "w") as f:
         f.write(result.to_string(justify="right", index=False))
-
-
-def write_log_file(output_prefix: str, content: str):
-    """Helper to write content to a log file"""
-
-    # make file if does not exist, otherwise overwrite
-    filepath = f"{output_prefix}.log"
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-    with open(filepath, "w") as f:
-        f.write(content)
 
 
 def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=None):
@@ -150,7 +125,22 @@ def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=Non
     ibd_results = ibd_fn(genotypes)
 
     result = pd.DataFrame(
-        columns=GENOME_COLUMNS,
+        columns=[
+            "FID1",
+            "IID1",
+            "FID2",
+            "IID2",
+            "RT",
+            "EZ",
+            "Z0",
+            "Z1",
+            "Z2",
+            "PI_HAT",
+            "PHE",
+            "DST",
+            "PPC",
+            "RATIO",
+        ],
         data=[
             {
                 "FID1": family_ids[int(sample_idx1)],
