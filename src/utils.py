@@ -4,6 +4,8 @@ import os
 import pandas as pd
 from bed_reader import open_bed
 
+import sys
+
 logger = logging.getLogger("python_ibd")
 
 GENOME_COLUMNS = [
@@ -53,20 +55,46 @@ def setup_logger(output_prefix: str) -> logging.Logger:
     return logger
 
 
-def print_progress(current: int, total: int, bar_width: int = 40) -> None:
+def print_progress(
+    name: str,
+    sub_name: str = None,
+    sub_current: int = None,
+    sub_total: int = None,
+    bar_width: int = 30,
+    is_finished=False,
+    print_all_iterations=False,
+) -> None:
     """Write an inline progress bar to stdout using carriage return."""
-    import sys
 
-    pct = (current + 1) / total
-    filled = int(bar_width * pct)
-    bar = (
-        "=" * filled
-        + (">" if filled < bar_width else "")
-        + " " * max(0, bar_width - filled - 1)
-    )
-    sys.stdout.write(f"\r  [{bar}] {pct * 100:5.1f}%  ({current + 1}/{total})")
+    # only print every 0.1% of iterations by default to avoid overwhelming stdout, but print all iterations.
+    if (
+        not print_all_iterations
+        and sub_current is not None
+        and sub_total is not None
+        and sub_total > 1000
+        and sub_current % (sub_total // 1000) != 0
+        and not is_finished
+    ):
+        return
+
+    # Base output string
+    output = f"\r{name}"
+
+    if (sub_name or (sub_current and sub_total)) and not is_finished:
+        pct = (sub_current + 1) / sub_total
+        filled = int(bar_width * pct)
+        bar = (
+            "=" * filled
+            + (">" if filled < bar_width else "")
+            + " " * max(0, bar_width - filled - 1)
+        )
+        output += f" | {sub_name} [{bar}] {pct * 100:5.1f}%"
+
+    # \033[K clears the rest of the line to prevent trailing artifact characters
+    sys.stdout.write(f"{output}\033[K")
     sys.stdout.flush()
-    if current == total - 1:
+
+    if is_finished:
         sys.stdout.write("\n")
         sys.stdout.flush()
 
@@ -96,22 +124,23 @@ def write_log_file(output_prefix: str, content: str):
 def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=None):
     setup_logger(out_prefix)
     implementation_name = implementation_name or "unknown"
-
-    logger.info("Running %s IBD...", implementation_name)
     logger.debug(
         "IBD calculation recieved parameters input prefix: '%s' and output prefix: '%s'",
         input_prefix,
         out_prefix,
     )
 
-    logger.info("Reading input files...")
+    print_progress("Stage 1/5 Reading Input File...", is_finished=False)
+    logger.debug("Started reading input file.")
 
     bed = open_bed(f"{input_prefix}.bed")
     individual_ids = bed.iid
     family_ids = bed.fid
     genotypes = bed.read()
 
-    logger.info("Done. Finished reading input files.")
+    print_progress("Stage 1/5 Reading Input File... Done.", is_finished=True)
+    logger.debug("Finished reading input file.")
+
     logger.debug(
         "Input files contain %d individuals, %d variants.",
         genotypes.shape[0],
@@ -143,5 +172,13 @@ def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=Non
         ],
     )
 
+    print_progress("Stage 5/5 Writing to output files...", is_finished=False)
+
     write_genome_file(out_prefix, result)
+
+    print_progress(
+        f"Stage 5/5 Writing to output files... Done.",
+        is_finished=True,
+    )
+
     logger.info("Output written to %s.genome and %s.log", out_prefix, out_prefix)

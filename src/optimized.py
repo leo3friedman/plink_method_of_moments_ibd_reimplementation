@@ -28,28 +28,29 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
         NUM_INDIVIDUALS,
     )
 
-    logger.info("Computing allele frequencies...")
+    print_progress("Stage 2/5 Computing Allele Frequencies...")
+    logger.debug(
+        "Started computing allele frequencies for %d variants...", NUM_VARIANTS
+    )
 
     # Step 1. For each SNP we precompute allele frequencies. See naive.py for more implementation notes.
 
     variant_stats = compute_variant_stats(genotypes)
 
-    logger.debug("Done. Finished computing allele frequencies.")
+    print_progress("Stage 2/5 Computing Allele Frequencies... Done.", is_finished=True)
+    logger.debug("Finished computing allele frequencies for %d variants.", NUM_VARIANTS)
 
     # Step 2. Compute average global expected counts of IBS states conditional on IBD states. See naive.py for moreimplementation notes.
-
-    logger.info("Computing global expected IBS counts...")
 
     avg_e00, avg_e01, avg_e02, avg_e11, avg_e12 = compute_average_expected_counts(
         variant_stats
     )
 
-    logger.debug("Done. Finished computing global expected IBS counts.")
-
     # Step 3. compute per individual pair IBD estimation. See naive.py for more implementation notes.
 
     total_pairs = math.comb(NUM_INDIVIDUALS, 2)
-    logger.info("Computing pairwise IBD for %d pairs...", total_pairs)
+    print_progress("Stage 4/5 Computing pairwise IBD...")
+    logger.debug("Starting computing pairwise IBD for %d pairs...", total_pairs)
 
     # is0[i,m] = 1 if individual i has genotype 0 at SNP m. Shape: (n_individuals × n_variants)
     # NaN genotypes evaluate to False for all is0, is1, and is2, so they are effectively ignored in the downstream IBS counts.
@@ -103,18 +104,18 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     z1 = np.where(e11 > 0, (ibs1 - z0 * e01) / e11, 0.0)
     z2 = np.where(e22 > 0, (ibs2 - z0 * e02 - z1 * e12) / e22, 0.0)
 
-    logger.debug("Done. Finished computing pairwise IBD estimates.")
+    logger.debug("Finished computing raw IBD estimates for %d pairs.", total_pairs)
 
     # Step 4. Apply bounding procedure, see naive.py for more implementation notes.
 
-    logger.info("Applying bounding procedure to IBD estimates...")
+    logger.debug("Applying bounding procedure to IBD estimates...")
 
     for pair_idx in range(total_pairs):
         z0[pair_idx], z1[pair_idx], z2[pair_idx] = bind_z_values(
             z0[pair_idx], z1[pair_idx], z2[pair_idx]
         )
 
-    logger.debug("Done. Finished applying bounding procedure.")
+    logger.debug("Finished applying bounding procedure.")
 
     result = np.zeros((total_pairs, 5))
     result[:, 0] = idx_i  # individual 1 index
@@ -122,6 +123,9 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     result[:, 2] = z0
     result[:, 3] = z1
     result[:, 4] = z2
+
+    print_progress("Stage 4/5 Computing pairwise IBD... Done.", is_finished=True)
+    logger.debug("Finished computing pairwise IBD estimates.")
 
     return result
 

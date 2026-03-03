@@ -22,9 +22,6 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     NUM_VARIANTS = genotypes.shape[1]
     NUM_INDIVIDUALS = genotypes.shape[0]
 
-    logger.info("Computing allele frequencies and global expected IBS counts...")
-    logger.debug("  %d variants, %d individuals", NUM_VARIANTS, NUM_INDIVIDUALS)
-
     # Step 1. For each SNP we precompute allele frequencies:
     # - X <- Sum reference allele count across all individuals
     # - Y <- Sum alternate allele count across all samples
@@ -48,11 +45,9 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
 
     pairs = list(itertools.combinations(range(NUM_INDIVIDUALS), 2))
     total_pairs = len(pairs)
-    logger.info("Done. Computing pairwise IBD for %d pairs:", total_pairs)
 
     result = np.zeros((total_pairs, 5))
     for pair_inx, (individual_1_idx, individual_2_idx) in enumerate(pairs):
-        print_progress(pair_inx, total_pairs)
         ibs_0_count = 0
         ibs_1_count = 0
         ibs_2_count = 0
@@ -100,6 +95,15 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
         result[pair_inx, 3] = z1
         result[pair_inx, 4] = z2
 
+        is_finished = pair_inx == total_pairs - 1
+        print_progress(
+            f"Stage 4/5 Computing pairwise IBD... {'Done.' if is_finished else ''}",
+            sub_name=f"Progress",
+            sub_current=pair_inx,
+            sub_total=total_pairs,
+            is_finished=is_finished,
+        )
+
     return result
 
 
@@ -142,6 +146,7 @@ def bind_z_values(z0, z1, z2):
 
 def compute_average_expected_counts(variant_stats: dict) -> tuple:
     """Helper function to compute the global expected counts of IBS states conditional on IBD states, used in the method of moments IBD estimation."""
+    logger.debug("Started computing global expected IBS counts...")
 
     # Purcell et al. describes the following:
     # - N(I = i | Z = z) <- The global expected count of SNPs with IBS state I = i conditional on IBD state Z = z.
@@ -161,7 +166,16 @@ def compute_average_expected_counts(variant_stats: dict) -> tuple:
     sum_e12 = 0.0
     cnt_poly = 0  # count of polymorphic SNPs, used by PLINK 1.9 (ibd_prect) in per-indivual pair caluclations
 
-    for variant_stat in variant_stats.values():
+    for i, variant_stat in enumerate(variant_stats.values()):
+        is_finished = i == len(variant_stats) - 1
+        print_progress(
+            f"Stage 3/5 Computing IBS Estimates... {'Done.' if is_finished else ''}",
+            sub_name="Progress",
+            sub_current=i,
+            sub_total=len(variant_stats),
+            is_finished=is_finished,
+        )
+
         # attempt to match Purcell et al. then PLINK 1.9's naming conventions as much as possible, see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4849-L4866
         X = variant_stat["ref_count"]  # ref count
         Y = variant_stat["alt_count"]  # alt count
@@ -205,6 +219,9 @@ def compute_average_expected_counts(variant_stats: dict) -> tuple:
     avg_e02 = sum_e02 / cnt_poly if cnt_poly > 0 else 0.0
     avg_e11 = sum_e11 / cnt_poly if cnt_poly > 0 else 0.0
     avg_e12 = sum_e12 / cnt_poly if cnt_poly > 0 else 0.0
+
+    logger.debug("Finished computing global expected IBS counts.")
+
     return avg_e00, avg_e01, avg_e02, avg_e11, avg_e12
 
 
@@ -223,6 +240,15 @@ def compute_variant_stats(genotypes: np.ndarray) -> dict:
                     variant_stats[variant_id]["alt_count"] += 1
                 elif genotype_for_sample == 2:
                     variant_stats[variant_id]["alt_count"] += 2
+
+        is_finished = variant_id == genotypes.shape[1] - 1
+        print_progress(
+            f"Stage 2/5 Computing Allele Frequencies... {'Done.' if is_finished else ''}",
+            sub_name="Progress",
+            sub_current=variant_id,
+            sub_total=genotypes.shape[1],
+            is_finished=is_finished,
+        )
     return variant_stats
 
 
