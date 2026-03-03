@@ -1,6 +1,7 @@
 import logging
 import os
 
+import numpy as np
 import pandas as pd
 from bed_reader import open_bed
 
@@ -95,6 +96,7 @@ def compute_expected_ibs(X, Y):
     See Purcell et al. 2007 Table 1 and PLINK 1.9:
     https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4849-L4866
     """
+
     T = X + Y
     p = X / T
     q = Y / T
@@ -135,7 +137,12 @@ def write_genome_file(output_prefix: str, result: pd.DataFrame):
         f.write(result.to_string(justify="right", index=False))
 
 
-def run_implementation(ibd_fn: callable, input_prefix: str, out_prefix: str, implementation_name: str = None):
+def run_implementation(
+    ibd_fn: callable,
+    input_prefix: str,
+    out_prefix: str,
+    implementation_name: str = None,
+):
     setup_logger(out_prefix)
     implementation_name = implementation_name or "unknown"
     logger.debug(
@@ -163,42 +170,29 @@ def run_implementation(ibd_fn: callable, input_prefix: str, out_prefix: str, imp
 
     ibd_results = ibd_fn(genotypes)
 
+    idx1 = ibd_results[:, 0].astype(int)
+    idx2 = ibd_results[:, 1].astype(int)
+    z0 = ibd_results[:, 2]
+    z1 = ibd_results[:, 3]
+    z2 = ibd_results[:, 4]
+
     result = pd.DataFrame(
-        columns=[
-            "FID1",
-            "IID1",
-            "FID2",
-            "IID2",
-            "RT",
-            "EZ",
-            "Z0",
-            "Z1",
-            "Z2",
-            "PI_HAT",
-            "PHE",
-            "DST",
-            "PPC",
-            "RATIO",
-        ],
-        data=[
-            {
-                "FID1": family_ids[int(sample_idx1)],
-                "IID1": individual_ids[int(sample_idx1)],
-                "FID2": family_ids[int(sample_idx2)],
-                "IID2": individual_ids[int(sample_idx2)],
-                "RT": "UN",
-                "EZ": "NA",
-                "Z0": Z0,
-                "Z1": Z1,
-                "Z2": Z2,
-                "PI_HAT": Z1 / 2 + Z2,
-                "PHE": -1,
-                "DST": 0,
-                "PPC": 0,
-                "RATIO": 0,
-            }
-            for (sample_idx1, sample_idx2, Z0, Z1, Z2) in list(ibd_results)
-        ],
+        {
+            "FID1": family_ids[idx1],
+            "IID1": individual_ids[idx1],
+            "FID2": family_ids[idx2],
+            "IID2": individual_ids[idx2],
+            "RT": "UN",
+            "EZ": "NA",
+            "Z0": z0,
+            "Z1": z1,
+            "Z2": z2,
+            "PI_HAT": z1 / 2 + z2,
+            "PHE": -1,
+            "DST": 0,
+            "PPC": 0,
+            "RATIO": 0,
+        }
     )
 
     print_progress("Stage 5/5 Writing to output files...", is_finished=False)

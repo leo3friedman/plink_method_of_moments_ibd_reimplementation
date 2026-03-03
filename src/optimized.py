@@ -2,8 +2,6 @@ import pandas as pd
 import numpy as np
 import math
 
-from src.naive import bind_z_values
-
 import logging
 from src.utils import compute_expected_ibs, print_progress, run_implementation
 
@@ -11,21 +9,14 @@ logger = logging.getLogger("python_ibd")
 
 
 def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
-    """
-    Computes the IBD estimates (Z0, Z1, Z2) for all individuals in the genotype matrix using the method of moments approach.
-    This is the optimized implementation which should outperform naive.compute_ibd on large datasets in terms of runtime.
+    """Computes the IBD estimates (Z0, Z1, Z2) for all individuals in the genotype matrix using the method of moments approach.
+    This is the optimized (vector-based) implementation which should outperform naive.compute_ibd on large datasets in terms of runtime.
     """
 
     NUM_VARIANTS = genotypes.shape[1]
     NUM_INDIVIDUALS = genotypes.shape[0]
 
-    logger.debug(
-        "Computing IBD estimates for %d variants and %d individuals...",
-        NUM_VARIANTS,
-        NUM_INDIVIDUALS,
-    )
-
-    # Step 1. For each SNP we precompute allele frequencies.
+    # Step 1: Compute reference and alternate allele counts for each SNP.
 
     print_progress("Stage 2/5 Computing Allele Frequencies...")
     logger.debug(
@@ -39,17 +30,24 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     print_progress("Stage 2/5 Computing Allele Frequencies... Done.", is_finished=True)
     logger.debug("Finished computing allele frequencies for %d variants.", NUM_VARIANTS)
 
-    # Step 2. Compute average global expected counts of IBS states conditional on IBD states.
+    # Step 2: Compute average global expected counts of IBS states conditional on IBD states.
 
     logger.debug("Started computing global expected IBS counts...")
-    T = ref_counts + alt_counts
 
-    # We restrict the subset to only polymorphic variants with at least 4 observed alleles per PLINKs implementation, see 
-    poly = (ref_counts > 0) & (alt_counts > 0) & (T >= 4)
-    
+    # Step 2.1: Compute expected IBS counts for polymorphic variants.
+
+    T = ref_counts + alt_counts
+    poly = (
+        (ref_counts > 0) & (alt_counts > 0) & (T > 3)
+    )  # PLINK 1.9 only considers polymorphic variants with > 3 observed alleles, see https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4846
+
     e00_v, e01_v, e02_v, e11_v, e12_v = compute_expected_ibs(
         ref_counts[poly], alt_counts[poly]
     )
+
+    # Step 2.2: Average the expected IBS counts to get the global expected average per SNP
+    # Note: avg_eij is the global expectation of seeing IBS state j given IBD state i for any arbitrary SNP
+
     cnt_poly = poly.sum()
     avg_e00 = e00_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
     avg_e01 = e01_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
@@ -58,76 +56,104 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     avg_e12 = e12_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
     logger.debug("Finished computing global expected IBS counts.")
 
-    # Step 3. Compute per-individual pair IBD estimation.
+    # Step 3: Compute per-individual pair IBD estimation.
+
+    print_progress("Stage 4/5 Computing pairwise IBD...")
 
     total_pairs = math.comb(NUM_INDIVIDUALS, 2)
-    print_progress("Stage 4/5 Computing pairwise IBD...")
+
     logger.debug("Starting computing pairwise IBD for %d pairs...", total_pairs)
 
-    # is0[i,m] = 1 if individual i has genotype 0 at SNP m. Shape: (n_individuals × n_variants)
-    # NaN genotypes evaluate to False for all is0, is1, and is2, so they are effectively ignored in the downstream IBS counts.
-    is0 = (genotypes == 0).astype(np.float32)
+    # Step 3.1: Create IBS state indicators for each IBS state
+    # Note: isk[i,m] = 1 if individual i has genotype k at SNP m
+
+    is0 = (genotypes == 0).astype(np.float32)  # Shape: (n_individuals, n.variants)
     is1 = (genotypes == 1).astype(np.float32)
     is2 = (genotypes == 2).astype(np.float32)
 
-    # valid[i, m] = 1 if individual i has a non-missing genotype at SNP m. Shape: (n_individuals × n.variants)
+    # Step 3.2: Compute number of non-missing SNPs per individual pair
+    # Note: S[i,j] = count of SNPs with non-missing genotypes for individuals i and j.
+
     valid = (~np.isnan(genotypes)).astype(np.float32)
+    S = valid @ valid.T  # Shape: (n_individuals, n_individuals)
 
-    # ibs_2[i, j] = count of IBS 2 SNPs between individuals i and j. Shape: (n_individuals × n_individuals)
-    # Note: (is0 @ is0.T)[i, j] is the count of SNPs where individuals i and j both have genotype 0. Similarily for is1 and is2, so summing gives the total count of matching genotypes.
-    ibs_2 = is0 @ is0.T + is1 @ is1.T + is2 @ is2.T
+    # Step 3.3: Compute IBS counts for all each genome
+    # Note: ibs_k_counts[i, j] = count of IBS k SNPs between individuals i and j.
+    # Note: (isk @ isk.T)[i, j] is the count of SNPs where individuals i and j both have genotype k
 
-    # ibs_0[i, j] = count of IBS 0 SNPs between individuals i and j. Shape: (n_individuals × n_individuals)
-    # Note (is0 @ is2.T)[i, j] is the count of SNPs where individual i has genotype 0 and individual j has genotype 2. Similarily for (is2 @ is0.T), so summing gives the total count of IBS 0 SNPs.
-    ibs_0 = is0 @ is2.T + is2 @ is0.T
+    ibs_0_counts = is0 @ is2.T + is2 @ is0.T  # Shape: (n_individuals, n_individuals)
+    ibs_2_counts = is0 @ is0.T + is1 @ is1.T + is2 @ is2.T
+    ibs_1_counts = S - ibs_0_counts - ibs_2_counts  # all remaining SNPs
 
-    # S[i,j] = number of SNPs where both individuals have non-missing genotypes. Shape: (n_individuals × n_individuals)
-    S = valid @ valid.T
+    # Step 3.4: Restrict to upper triangle pairs, ibs_k[i] = counts of SNPs with IBS k for pair i (i.e. individuals (ind_i[i], ind_j[i]))
+    # Note: this is equivalent to itertools.combinations. The ibs_k_counts (n_individuals, n_individuals) matrices represents all permutations of pairs, but we only care about combinations (i.e. (0,1) is the same as (1,0)).
 
-    # ibs_1[i,j] = count of IBS 1 SNPs between individuals i and j. Shape: (n_individuals × n_individuals)
-    # Can be computed as all non missing snps that is are not ibs_2 or ibs_0
-    ibs_1 = S - ibs_2 - ibs_0
-
-    # The indices of the upper triangle of the above (n_individuals × n_individuals) matrices
-    # Each of these matrices are symmetric, so we don't distiguish between pair (i, j) and pair (j, i).
-    # The diagonal of these matrices corresponds to self comparisons (i, i) which we also ignore.
-    # (ind_i[i], ind_j[i]) gives the i'th pair of individuals for which we will compute IBD estimates.
     idx_i, idx_j = np.triu_indices(NUM_INDIVIDUALS, k=1)
-
-    # Restrict the ibs matrices to only the upper right triangle pairs.
-    # Shape: (n_pairs, 1), where ibs0[i] is the count of IBS 0 SNPs for pair i (i.e. pair (ind_i[i], ind_j[i]))
-    ibs0 = ibs_0[idx_i, idx_j]
-    ibs1 = ibs_1[idx_i, idx_j]
-    ibs2 = ibs_2[idx_i, idx_j]
+    ibs_0 = ibs_0_counts[idx_i, idx_j]  # Shape: (n_pairs, )
+    ibs_1 = ibs_1_counts[idx_i, idx_j]
+    ibs_2 = ibs_2_counts[idx_i, idx_j]
     S = S[idx_i, idx_j]
 
-    # Compute expected IBS counts, see naive.py for more implementation notes.
-    # Shape: (n_pairs, 1)
-    e00 = avg_e00 * S  # N(I=0 count | Z=0)
-    e01 = avg_e01 * S  # N(I=1 count | Z=1)
-    e02 = avg_e02 * S  # N(I=2 count | Z=2)
-    e11 = avg_e11 * S  # N(I=1 count | Z=1)
-    e12 = avg_e12 * S  # N(I=2 count | Z=1)
-    e22 = 1.0 * S  # N(I=2 count | Z=2) = S
+    # Step 3.5: Compute expected IBS counts
+    # Note: eij[k] = expected count of IBS j SNPs for pair k given IBD state i
 
-    # Compute IBD estimates using method of moments equations, see naive.py for more implementation notes.
-    # Shape: (n_pairs, 1)
-    z0 = np.where(e00 > 0, ibs0 / e00, 0.0)
-    z1 = np.where(e11 > 0, (ibs1 - z0 * e01) / e11, 0.0)
-    z2 = np.where(e22 > 0, (ibs2 - z0 * e02 - z1 * e12) / e22, 0.0)
+    e00 = avg_e00 * S  # Shape: (n_pairs, )
+    e01 = avg_e01 * S
+    e02 = avg_e02 * S
+    e11 = avg_e11 * S
+    e12 = avg_e12 * S
+    e22 = 1.0 * S  # All SNPs are expected to be IBS 2 given IBD state is 2
+
+    # Step 3.6: Compute IBD estimates using Method of Moments (Purcell et al. 2007)
+
+    z0 = np.where(e00 > 0, ibs_0 / e00, 0.0)  # Shape: (n_pairs, )
+    z1 = np.where(e11 > 0, (ibs_1 - z0 * e01) / e11, 0.0)
+    z2 = np.where(e22 > 0, (ibs_2 - z0 * e02 - z1 * e12) / e22, 0.0)
 
     logger.debug("Finished computing raw IBD estimates for %d pairs.", total_pairs)
 
-    # Step 4. Apply bounding procedure, see naive.py for more implementation notes.
+    # Step 4: Bounding IBD estimates to valid probabilities (Purcell et al. 2007)
 
     logger.debug("Applying bounding procedure to IBD estimates...")
 
-    for pair_idx in range(total_pairs):
-        z0[pair_idx], z1[pair_idx], z2[pair_idx] = bind_z_values(
-            z0[pair_idx], z1[pair_idx], z2[pair_idx]
-        )
+    # Step 4.1: If any Z value exceeds 1, clamp it to 1 and set the other two to 0
+
+    z1 = np.where(z0 > 1, 0.0, z1)
+    z2 = np.where(z0 > 1, 0.0, z2)
+    z0 = np.where(z0 > 1, 1.0, z0)
+
+    z0 = np.where(z1 > 1, 0.0, z0)
+    z2 = np.where(z1 > 1, 0.0, z2)
+    z1 = np.where(z1 > 1, 1.0, z1)
+
+    z0 = np.where(z2 > 1, 0.0, z0)
+    z1 = np.where(z2 > 1, 0.0, z1)
+    z2 = np.where(z2 > 1, 1.0, z2)
+
+    # Step 4.2: If any Z value is negative, set it to 0 and renormalize the other two to sum to 1
+
+    mask = z0 < 0
+    z0 = np.where(mask, 0.0, z0)
+    s = z1 + z2
+    z1 = np.where(mask & (s > 0), z1 / np.where(s > 0, s, 1.0), z1)
+    z2 = np.where(mask & (s > 0), z2 / np.where(s > 0, s, 1.0), z2)
+
+    mask = z1 < 0
+    z1 = np.where(mask, 0.0, z1)
+    s = z0 + z2
+    z0 = np.where(mask & (s > 0), z0 / np.where(s > 0, s, 1.0), z0)
+    z2 = np.where(mask & (s > 0), z2 / np.where(s > 0, s, 1.0), z2)
+
+    mask = z2 < 0
+    z2 = np.where(mask, 0.0, z2)
+    s = z0 + z1
+    z0 = np.where(mask & (s > 0), z0 / np.where(s > 0, s, 1.0), z0)
+    z1 = np.where(mask & (s > 0), z1 / np.where(s > 0, s, 1.0), z1)
 
     logger.debug("Finished applying bounding procedure.")
+
+    print_progress("Stage 4/5 Computing pairwise IBD... Done.", is_finished=True)
+    logger.debug("Finished computing pairwise IBD estimates.")
 
     result = np.zeros((total_pairs, 5))
     result[:, 0] = idx_i  # individual 1 index
@@ -135,9 +161,6 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     result[:, 2] = z0
     result[:, 3] = z1
     result[:, 4] = z2
-
-    print_progress("Stage 4/5 Computing pairwise IBD... Done.", is_finished=True)
-    logger.debug("Finished computing pairwise IBD estimates.")
 
     return result
 
