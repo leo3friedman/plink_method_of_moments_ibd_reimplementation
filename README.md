@@ -68,4 +68,23 @@ You can execute the test suite from the root directory using `pytest` from the r
 
 ### Project Structure
 
+```
+├── python_ibd              # CLI entry point
+├── requirements.txt        # Python dependencies
+├── src/
+│   ├── cli.py              # Argument parsing (--input, --out, --naive)
+│   ├── naive.py            # Non-optimized IBD computation (loop-based)
+│   ├── optimized.py        # Optimized IBD computation (vector-based)
+│   └── utils.py            # Shared I/O, logging, progress, .genome writing
+├── tests/
+│   ├── test_naive.py       # Tests for naive implementation
+│   ├── test_optimized.py   # Tests for optimized implementation
+│   ├── utils.py            # Test helpers (R² calculation, .genome parsing, assertions)
+│   └── fixtures/           # Pre-computed .genome files for full-dataset validation
+└── data/
+    ├── micro.*             # Micro dataset (2 samples, 10 variants)
+    ├── subset.*            # Subset dataset (10 samples, 2000 variants)
+    └── plink.*.genome      # Expected PLINK outputs for each dataset
+```
+
 ### Future Work and Challenges
