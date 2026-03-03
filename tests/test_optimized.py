@@ -1,5 +1,5 @@
 from src.optimized import run_optimized
-from tests.utils import (
+from tests.shared import (
     assert_log_file_exists,
     get_tmp_output_prefix,
     assert_genome_data,

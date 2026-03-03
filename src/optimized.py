@@ -2,10 +2,12 @@ import pandas as pd
 import numpy as np
 import math
 
-import logging
-from src.utils import compute_expected_ibs, print_progress, run_implementation
+from src.logging import StageLogger
 
-logger = logging.getLogger("python_ibd")
+from src.shared import (
+    compute_expected_ibs,
+    run_implementation,
+)
 
 
 def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
@@ -13,26 +15,28 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     This is the optimized (vector-based) implementation which should outperform naive.compute_ibd on large datasets in terms of runtime.
     """
 
+    log = StageLogger("optimized.compute_ibd")
+
     NUM_VARIANTS = genotypes.shape[1]
     NUM_INDIVIDUALS = genotypes.shape[0]
 
+    log.debug(
+        f"Input genotype matrix has {NUM_INDIVIDUALS} individuals and {NUM_VARIANTS} variants."
+    )
+
     # Step 1: Compute reference and alternate allele counts for each SNP.
 
-    print_progress("Stage 2/5 Computing Allele Frequencies...")
-    logger.debug(
-        "Started computing allele frequencies for %d variants...", NUM_VARIANTS
-    )
+    log.stdout(f"Stage 1/3 Computing allele frequencies...")
 
     non_missing = ~np.isnan(genotypes)
     alt_counts = np.nansum(genotypes, axis=0)
     ref_counts = 2 * non_missing.sum(axis=0) - alt_counts
 
-    print_progress("Stage 2/5 Computing Allele Frequencies... Done.", is_finished=True)
-    logger.debug("Finished computing allele frequencies for %d variants.", NUM_VARIANTS)
+    log.finish(f"Stage 1/3 Computing allele frequencies... Done.")
 
     # Step 2: Compute average global expected counts of IBS states conditional on IBD states.
 
-    logger.debug("Started computing global expected IBS counts...")
+    log.stdout("Stage 2/3 Computing global expected IBS counts...")
 
     # Step 2.1: Compute expected IBS counts for polymorphic variants.
 
@@ -54,15 +58,15 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     avg_e02 = e02_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
     avg_e11 = e11_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
     avg_e12 = e12_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
-    logger.debug("Finished computing global expected IBS counts.")
+
+    log.finish("Stage 2/3 Computing global expected IBS counts... Done.")
 
     # Step 3: Compute per-individual pair IBD estimation.
 
-    print_progress("Stage 4/5 Computing pairwise IBD...")
+    log.stdout("Stage 3/3 Computing pairwise IBD...")
 
     total_pairs = math.comb(NUM_INDIVIDUALS, 2)
-
-    logger.debug("Starting computing pairwise IBD for %d pairs...", total_pairs)
+    log.debug(f"Computing pairwise IBD for {total_pairs} pairs.")
 
     # Step 3.1: Create IBS state indicators for each IBS state
     # Note: isk[i,m] = 1 if individual i has genotype k at SNP m
@@ -94,7 +98,7 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     ibs_2 = ibs_2_counts[idx_i, idx_j]
     S = S[idx_i, idx_j]
 
-    # Step 3.5: Compute expected IBS counts
+    # Step 3.5: Compute per-pair expected IBS counts given IBD state
     # Note: eij[k] = expected count of IBS j SNPs for pair k given IBD state i
 
     e00 = avg_e00 * S  # Shape: (n_pairs, )
@@ -110,13 +114,11 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     z1 = np.where(e11 > 0, (ibs_1 - z0 * e01) / e11, 0.0)
     z2 = np.where(e22 > 0, (ibs_2 - z0 * e02 - z1 * e12) / e22, 0.0)
 
-    logger.debug("Finished computing raw IBD estimates for %d pairs.", total_pairs)
+    log.debug("Finished computing raw IBD estimates, applying bounding procedure.")
 
-    # Step 4: Bounding IBD estimates to valid probabilities (Purcell et al. 2007)
+    # Step 3.7: Bounding IBD estimates to valid probabilities (Purcell et al. 2007)
 
-    logger.debug("Applying bounding procedure to IBD estimates...")
-
-    # Step 4.1: If any Z value exceeds 1, clamp it to 1 and set the other two to 0
+    # Step 3.7.1: If any Z value exceeds 1, clamp it to 1 and set the other two to 0
 
     z1 = np.where(z0 > 1, 0.0, z1)
     z2 = np.where(z0 > 1, 0.0, z2)
@@ -130,7 +132,7 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     z1 = np.where(z2 > 1, 0.0, z1)
     z2 = np.where(z2 > 1, 1.0, z2)
 
-    # Step 4.2: If any Z value is negative, set it to 0 and renormalize the other two to sum to 1
+    # Step 3.7.2: If any Z value is negative, set it to 0 and renormalize the other two to sum to 1
 
     mask = z0 < 0
     z0 = np.where(mask, 0.0, z0)
@@ -150,10 +152,7 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     z0 = np.where(mask & (s > 0), z0 / np.where(s > 0, s, 1.0), z0)
     z1 = np.where(mask & (s > 0), z1 / np.where(s > 0, s, 1.0), z1)
 
-    logger.debug("Finished applying bounding procedure.")
-
-    print_progress("Stage 4/5 Computing pairwise IBD... Done.", is_finished=True)
-    logger.debug("Finished computing pairwise IBD estimates.")
+    log.finish("Stage 3/3 Computing pairwise IBD... Done.")
 
     result = np.zeros((total_pairs, 5))
     result[:, 0] = idx_i  # individual 1 index
@@ -166,6 +165,4 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_optimized(input_prefix, out_prefix):
-    run_implementation(
-        compute_ibd, input_prefix, out_prefix, implementation_name="optimized"
-    )
+    run_implementation(compute_ibd, "optimized", input_prefix, out_prefix)
