@@ -44,7 +44,7 @@ While the tool generates a valid `.genome` file according to the [PLINK 1.9 spec
 
 ## Provided Datasets
 
-The `data/` directory contains small-scale datasets and their expected PLINK `.genome` outputs for testing and validation. The full-size dataset, which comes from the ` is excluded from this repository due to size constraints, but its expected output is included as a fixture for testing.
+The `data/` directory contains small-scale datasets and their expected PLINK `.genome` outputs for testing and validation. The full-size dataset is excluded from this repository due to size constraints, but its expected output is included as a fixture for testing.
 
 | Dataset    | Chromosomes | Variants | Samples | Input Files                              | PLINK output          |
 | :--------- | :---------- | :------- | :------ | :--------------------------------------- | :-------------------- |
