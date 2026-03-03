@@ -2,13 +2,10 @@ import pandas as pd
 import numpy as np
 import math
 
-from src.naive import (
-    compute_average_expected_counts,
-    bind_z_values,
-)
+from src.naive import bind_z_values
 
 import logging
-from src.utils import print_progress, run_implementation
+from src.utils import compute_expected_ibs, print_progress, run_implementation
 
 logger = logging.getLogger("python_ibd")
 
@@ -16,7 +13,7 @@ logger = logging.getLogger("python_ibd")
 def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     """
     Computes the IBD estimates (Z0, Z1, Z2) for all individuals in the genotype matrix using the method of moments approach.
-    This is the optimized implementation which should match PLINK's output and should outperform the implementation in naive.py on large datasets.
+    This is the optimized implementation which should outperform naive.compute_ibd on large datasets in terms of runtime.
     """
 
     NUM_VARIANTS = genotypes.shape[1]
@@ -28,25 +25,40 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
         NUM_INDIVIDUALS,
     )
 
+    # Step 1. For each SNP we precompute allele frequencies.
+
     print_progress("Stage 2/5 Computing Allele Frequencies...")
     logger.debug(
         "Started computing allele frequencies for %d variants...", NUM_VARIANTS
     )
 
-    # Step 1. For each SNP we precompute allele frequencies. See naive.py for more implementation notes.
-
-    variant_stats = compute_variant_stats(genotypes)
+    non_missing = ~np.isnan(genotypes)
+    alt_counts = np.nansum(genotypes, axis=0)
+    ref_counts = 2 * non_missing.sum(axis=0) - alt_counts
 
     print_progress("Stage 2/5 Computing Allele Frequencies... Done.", is_finished=True)
     logger.debug("Finished computing allele frequencies for %d variants.", NUM_VARIANTS)
 
-    # Step 2. Compute average global expected counts of IBS states conditional on IBD states. See naive.py for moreimplementation notes.
+    # Step 2. Compute average global expected counts of IBS states conditional on IBD states.
 
-    avg_e00, avg_e01, avg_e02, avg_e11, avg_e12 = compute_average_expected_counts(
-        variant_stats
+    logger.debug("Started computing global expected IBS counts...")
+    T = ref_counts + alt_counts
+
+    # We restrict the subset to only polymorphic variants with at least 4 observed alleles per PLINKs implementation, see 
+    poly = (ref_counts > 0) & (alt_counts > 0) & (T >= 4)
+    
+    e00_v, e01_v, e02_v, e11_v, e12_v = compute_expected_ibs(
+        ref_counts[poly], alt_counts[poly]
     )
+    cnt_poly = poly.sum()
+    avg_e00 = e00_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
+    avg_e01 = e01_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
+    avg_e02 = e02_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
+    avg_e11 = e11_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
+    avg_e12 = e12_v.sum() / cnt_poly if cnt_poly > 0 else 0.0
+    logger.debug("Finished computing global expected IBS counts.")
 
-    # Step 3. compute per individual pair IBD estimation. See naive.py for more implementation notes.
+    # Step 3. Compute per-individual pair IBD estimation.
 
     total_pairs = math.comb(NUM_INDIVIDUALS, 2)
     print_progress("Stage 4/5 Computing pairwise IBD...")
@@ -128,18 +140,6 @@ def compute_ibd(genotypes: pd.DataFrame) -> pd.DataFrame:
     logger.debug("Finished computing pairwise IBD estimates.")
 
     return result
-
-
-def compute_variant_stats(genotypes: np.ndarray):
-    """Helper function to compute allele frequencies and other variant stats for each SNP"""
-
-    non_missing = ~np.isnan(genotypes)
-    alt_counts = np.nansum(genotypes, axis=0).astype(int)  # sum down columns
-    ref_counts = (2 * non_missing.sum(axis=0) - alt_counts).astype(int)
-    return {
-        v: {"ref_count": int(ref_counts[v]), "alt_count": int(alt_counts[v])}
-        for v in range(genotypes.shape[1])
-    }
 
 
 def run_optimized(input_prefix, out_prefix):

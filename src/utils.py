@@ -22,7 +22,8 @@ def setup_logger(output_prefix: str) -> logging.Logger:
     logger.propagate = False  # prevent double-printing via root logger
 
     file_fmt = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        "%(asctime)s.%(msecs)03d [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     fh = logging.FileHandler(filepath, mode="w")
     fh.setLevel(logging.DEBUG)
@@ -63,7 +64,8 @@ def print_progress(
     # Base output string
     output = f"\r{name}"
 
-    if (sub_name or (sub_current and sub_total)) and not is_finished:
+    # add a sub progress bar if sub_current and sub_total are provided
+    if sub_current is not None and sub_total is not None and not is_finished:
         pct = (sub_current + 1) / sub_total
         filled = int(bar_width * pct)
         bar = (
@@ -82,6 +84,43 @@ def print_progress(
         sys.stdout.flush()
 
 
+def compute_expected_ibs(X, Y):
+    """Compute per-variant expected IBS contributions from ref count X and alt count Y.
+
+    Callers must filter out variants where X == 0, Y == 0, or X + Y < 4
+    before calling this function to avoid division by zero.
+
+    Works with both scalar values (loop-based) and numpy arrays (vectorized).
+
+    See Purcell et al. 2007 Table 1 and PLINK 1.9:
+    https://github.com/chrchang/plink-ng/blob/c785858ab8ebfd62fe8367d9a878323607086fde/1.9/plink_calc.c#L4849-L4866
+    """
+    T = X + Y
+    p = X / T
+    q = Y / T
+    dpp_sq = p**2
+    dqq_sq = q**2
+    dxx1 = (X - 1) / X
+    dxx2 = (X - 1) * (X - 2) / (X**2)
+    dyy1 = (Y - 1) / Y
+    dyy2 = (Y - 1) * (Y - 2) / (Y**2)
+    num_allelesf2 = T * T / ((T - 1) * (T - 2))
+    num_allelesf3 = num_allelesf2 * T / (T - 3)
+
+    e00 = 2 * dpp_sq * dqq_sq * dxx1 * dyy1 * num_allelesf3
+    e01 = 4 * p * q * num_allelesf3 * (dpp_sq * dxx2 + dqq_sq * dyy2)
+    e02 = num_allelesf3 * (
+        dqq_sq * dqq_sq * dyy2 * (Y - 3) / Y
+        + dpp_sq * dpp_sq * dxx2 * (X - 3) / X
+        + 4 * dpp_sq * dqq_sq * dxx1 * dyy1
+    )
+    e11 = 2 * p * q * num_allelesf2 * (p * dxx1 + q * dyy1)
+    e12 = num_allelesf2 * (
+        dpp_sq * p * dxx2 + dqq_sq * q * dyy2 + dpp_sq * q * dxx1 + p * dqq_sq * dyy1
+    )
+    return e00, e01, e02, e11, e12
+
+
 def write_genome_file(output_prefix: str, result: pd.DataFrame):
     """Helper to write a dataframe to a .genome file with the correct formatting"""
 
@@ -96,7 +135,7 @@ def write_genome_file(output_prefix: str, result: pd.DataFrame):
         f.write(result.to_string(justify="right", index=False))
 
 
-def run_implementation(ibd_fn, input_prefix, out_prefix, implementation_name=None):
+def run_implementation(ibd_fn: callable, input_prefix: str, out_prefix: str, implementation_name: str = None):
     setup_logger(out_prefix)
     implementation_name = implementation_name or "unknown"
     logger.debug(
