@@ -64,6 +64,24 @@ You can execute the test suite from the root directory using `pytest` from the r
 
 `python3 -m pytest tests -v`
 
+## Benchmarking
+
+The `benchmark.sh` script times PLINK and both Python implementations (naive and optimized) on the subset and full datasets. It is intended to run on **datahub.ucsd.edu only**, since the full dataset (`~/public/ps2/ibd/ps2_ibd.lwk`) is only available there.
+
+_Note:_ A full benchmarking run takes **upwards of 1 hour** due to the naive implementation's loop-based approach on the full dataset (97 individuals, ~27k variants).
+
+### Running the Benchmark
+
+```bash
+bash benchmark.sh <output_directory>
+```
+
+This runs 6 benchmarks sequentially (PLINK, naive, and optimized on both subset and full datasets) and writes wall-clock timings to `<output_directory>/benchmark_results.txt`. The Python `.log` files are preserved in the output directory for per-stage timing breakdown.
+
+### Benchmarking Results
+
+_TODO: Add results from a benchmarking run on datahub.ucsd.edu._
+
 ## Notes for Peer Reviewers
 
 ### Project Structure
@@ -71,15 +89,17 @@ You can execute the test suite from the root directory using `pytest` from the r
 ```
 ├── python_ibd              # CLI entry point
 ├── requirements.txt        # Python dependencies
+├── benchmark.sh            # Benchmarking script
 ├── src/
 │   ├── cli.py              # Argument parsing (--input, --out, --naive)
 │   ├── naive.py            # Non-optimized IBD computation (loop-based)
 │   ├── optimized.py        # Optimized IBD computation (vector-based)
-│   └── utils.py            # Shared I/O, logging, progress, .genome writing
+│   ├── shared.py           # Shared functions across both implementations
+│   └── logging.py          # StageLogger class for logging
 ├── tests/
 │   ├── test_naive.py       # Tests for naive implementation
 │   ├── test_optimized.py   # Tests for optimized implementation
-│   ├── utils.py            # Test helpers (R² calculation, .genome parsing, assertions)
+│   ├── shared.py           # Test helpers (R² calculation, assertions)
 │   └── fixtures/           # Pre-computed .genome files for full-dataset validation
 └── data/
     ├── micro.*             # Micro dataset (2 samples, 10 variants)
