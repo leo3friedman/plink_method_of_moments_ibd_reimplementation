@@ -66,21 +66,33 @@ You can execute the test suite from the root directory using `pytest` from the r
 
 ## Benchmarking
 
+### Results
+
+The benchmarks were ran on datahub.ucsd.edu (4 CPU, 16G RAM) against both a small dataset (10 samples, 2000 SNPs) and a larger dataset (97 samples, ~900k SNPs). All data originates from `~/public/ps2/ibd/ps2_ibd.lwk`.
+
+#### Runtime Comparison
+
+![Runtime Comparison](benchmarking/runtime.png)
+
+PLINK 1.9 (compiled C) completes the full dataset in about **1 second**. The optimized Python implementation, which uses NumPy matrix operations to vectorize IBS counting and IBD estimation, finishes in roughly **11 seconds** — about one order of magnitude slower. The naive Python implementation, which loops over every variant for every pair of individuals, takes approximately **3,550 seconds (~1 hour)** — over two orders of magnitude slower than the optimized version and three orders of magnitude slower than PLINK.
+
+#### Stage Breakdown
+
+![Stage Breakdown](benchmarking/breakdown.png)
+
+The breakdown reveals where each implementation spends its time. The naive implementation is dominated by the pairwise IBD computation (~99% of runtime), where a nested Python loop iterates over all 4,656 individual pairs and ~900k variants. The optimized implementation replaces this with matrix multiplications, reducing pairwise IBD to ~31% of runtime. Instead, file I/O (reading the `.bed` file and writing the `.genome` output) becomes the primary bottleneck at ~59%.
+
+### Running the Benchmark
+
 The `benchmark.sh` script times PLINK and both Python implementations (naive and optimized) on the subset and full datasets. It is intended to run on **datahub.ucsd.edu only**, since the full dataset (`~/public/ps2/ibd/ps2_ibd.lwk`) is only available there.
 
 _Note:_ A full benchmarking run takes **upwards of 1 hour** due to the naive implementation's loop-based approach on the full dataset (97 individuals, ~900k variants).
-
-### Running the Benchmark
 
 ```bash
 bash benchmark.sh <output_directory>
 ```
 
-This runs 6 benchmarks sequentially (PLINK, naive, and optimized on both subset and full datasets) and writes wall-clock timings to `<output_directory>/benchmark_results.txt`. The Python `.log` files are preserved in the output directory for per-stage timing breakdown.
-
-### Benchmarking Results
-
-_TODO: Add results from a benchmarking run on datahub.ucsd.edu._
+This runs 6 benchmarks sequentially (PLINK, naive, and optimized on both subset and full datasets) and writes wall-clock timings to `<output_directory>/results.txt`. The Python `.log` files are preserved in the output directory for per-stage timing breakdown.
 
 ## Notes for Peer Reviewers
 
@@ -101,10 +113,21 @@ _TODO: Add results from a benchmarking run on datahub.ucsd.edu._
 │   ├── test_optimized.py   # Tests for optimized implementation
 │   ├── shared.py           # Test helpers (R² calculation, assertions)
 │   └── fixtures/           # Pre-computed .genome files for full-dataset validation
-└── data/
-    ├── micro.*             # Micro dataset (2 samples, 10 variants)
-    ├── subset.*            # Subset dataset (10 samples, 2000 variants)
-    └── plink.*.genome      # Expected PLINK outputs for each dataset
+├── data/
+│   ├── micro.*             # Micro dataset (2 samples, 10 variants)
+│   ├── subset.*            # Subset dataset (10 samples, 2000 variants)
+│   └── plink.*.genome      # Expected PLINK outputs for each dataset
+└── benchmarking/
+    ├── results.txt         # Wall-clock timings from last benchmark run
+    ├── *.png               # Plots of Runtime and Per-stage breakdown
+    └── *.log               # Per-stage timing logs from Python implementations
 ```
 
-### Future Work and Challenges
+### Possible Future Work and Challenges
+
+1. Add a section to discuss $R^2$ similarity between Python and PLINK 1.9 in README. (Tests validate this but no formal discussion yet.)
+2. Improve benchmarking:
+   - Compare PLINK vs Optimized approach with even larger datasets.
+   - More robust benchmarking (e.g. take average of multiple runs).
+   - Test the memory usuage of each method.
+3. Explore reducing the Python I/O bottleneck by testing other packages for reading `.bed` files.

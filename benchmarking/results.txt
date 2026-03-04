@@ -1,0 +1,8 @@
+Benchmark run: Wed 04 Mar 2026 01:15:29 AM UTC
+
+PLINK subset: 0.014 s
+PLINK full: 1.021 s
+Naive subset: 1.219 s
+Optimized subset: 1.170 s
+Naive full: 3548.675 s
+Optimized full: 11.497 s
