@@ -61,6 +61,7 @@ class StageLogger:
         logger.debug("%s%s", self._log_prefix, text)
         sys.stdout.write(f"\r{text}\033[K")
         sys.stdout.flush()
+        self.last_stdout_text = text
 
     def debug(self, text: str):
         logger.debug("%s%s", self._log_prefix, text)
@@ -88,7 +89,9 @@ class StageLogger:
             + (">" if filled < self._bar_width else "")
             + " " * max(0, self._bar_width - filled - 1)
         )
-        sys.stdout.write(f"\r{message} [{bar}] {pct * 100:5.1f}%\033[K")
+        sys.stdout.write(
+            f"\r{self.last_stdout_text} | {message} [{bar}] {pct * 100:5.1f}%\033[K"
+        )
         sys.stdout.flush()
 
     def finish(self, text: str):

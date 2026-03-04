@@ -68,7 +68,7 @@ You can execute the test suite from the root directory using `pytest` from the r
 
 The `benchmark.sh` script times PLINK and both Python implementations (naive and optimized) on the subset and full datasets. It is intended to run on **datahub.ucsd.edu only**, since the full dataset (`~/public/ps2/ibd/ps2_ibd.lwk`) is only available there.
 
-_Note:_ A full benchmarking run takes **upwards of 1 hour** due to the naive implementation's loop-based approach on the full dataset (97 individuals, ~27k variants).
+_Note:_ A full benchmarking run takes **upwards of 1 hour** due to the naive implementation's loop-based approach on the full dataset (97 individuals, ~900k variants).
 
 ### Running the Benchmark
 
