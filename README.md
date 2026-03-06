@@ -68,15 +68,15 @@ You can execute the test suite from the root directory using `pytest` from the r
 
 ### Results
 
-The benchmarks were ran on datahub.ucsd.edu (4 CPU, 16G RAM) against both a small dataset (10 samples, 2000 SNPs) and a larger dataset (97 samples, ~900k SNPs). All data originates from `~/public/ps2/ibd/ps2_ibd.lwk`.
+The benchmarks were ran on datahub.ucsd.edu (4 CPU, 16G RAM) against both a small dataset (10 samples, 2000 SNPs) and a larger dataset (97 samples, ~900k SNPs).
 
 #### Runtime Comparison
 
 ![Runtime Comparison](benchmarking/runtime.png)
 
-PLINK 1.9 (compiled C) completes the full dataset in about **1 second**. The optimized Python implementation, which uses NumPy matrix operations to vectorize IBS counting and IBD estimation, finishes in roughly **11 seconds** — about one order of magnitude slower. The naive Python implementation, which loops over every variant for every pair of individuals, takes approximately **3,550 seconds (~1 hour)** — over two orders of magnitude slower than the optimized version and three orders of magnitude slower than PLINK.
+PLINK 1.9 (compiled C) completes the full dataset in about 1 second. The optimized Python implementation, which uses NumPy matrix operations to vectorize IBS counting and IBD estimation, finishes in roughly 11 seconds. The naive Python implementation, which loops over every variant for every pair of individuals, takes approximately 3,550 seconds (~1 hour).
 
-#### Stage Breakdown
+#### Runtime Breakdown
 
 ![Stage Breakdown](benchmarking/breakdown.png)
 
@@ -84,9 +84,9 @@ The breakdown reveals where each implementation spends its time. The naive imple
 
 ### Running the Benchmark
 
-The `benchmark.sh` script times PLINK and both Python implementations (naive and optimized) on the subset and full datasets. It is intended to run on **datahub.ucsd.edu only**, since the full dataset (`~/public/ps2/ibd/ps2_ibd.lwk`) is only available there.
+The `benchmark.sh` script times PLINK and both Python implementations (naive and optimized) on the subset and full datasets. It is intended to run on datahub.ucsd.edu only, since the full dataset (`~/public/ps2/ibd/ps2_ibd.lwk`) is only available there.
 
-_Note:_ A full benchmarking run takes **upwards of 1 hour** due to the naive implementation's loop-based approach on the full dataset (97 individuals, ~900k variants).
+_Note:_ A full benchmarking run takes upwards of 1 hour due to the naive implementation's loop-based approach on the full dataset (97 individuals, ~900k variants).
 
 ```bash
 bash benchmark.sh <output_directory>
