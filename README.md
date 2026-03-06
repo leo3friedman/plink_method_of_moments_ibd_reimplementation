@@ -46,10 +46,10 @@ While the tool generates a valid `.genome` file according to the [PLINK 1.9 spec
 
 The `data/` directory contains small-scale datasets and their expected PLINK `.genome` outputs for testing and validation. The full-size dataset is excluded from this repository due to size constraints, but its expected output is included as a fixture for testing.
 
-| Dataset    | Chromosomes | Variants | Samples | Input Files                              | PLINK output          |
-| :--------- | :---------- | :------- | :------ | :--------------------------------------- | :-------------------- |
-| **Micro**  | 1           | 10       | 2       | `micro.bed`, `micro.bim`, `micro.fam`,   | `plink.micro.genome`  |
-| **Subset** | 1           | 2000     | 10      | `subset.bed`, `subset.bim`, `subset.fam` | `plink.subset.genome` |
+| Dataset    | Variants | Samples | Input Files                              | PLINK output          |
+| :--------- | :------- | :------ | :--------------------------------------- | :-------------------- |
+| **Micro**  | 10       | 2       | `micro.bed`, `micro.bim`, `micro.fam`,   | `plink.micro.genome`  |
+| **Subset** | 2000     | 10      | `subset.bed`, `subset.bim`, `subset.fam` | `plink.subset.genome` |
 
 _Note:_ The provided datasets are subsets of the `~/public/ps2/ibd/ps2_ibd.lwk` dataset found on datahub.ucsd.edu.
 
@@ -57,10 +57,9 @@ _Note:_ The provided datasets are subsets of the `~/public/ps2/ibd/ps2_ibd.lwk` 
 
 The test suite verifies the accuracy of both the optimized and `--naive` implementations by comparing their output against the established PLINK 1.9 results.
 
-- The suite actively runs both implementations against the `micro` and `subset` datasets.
-- To validate the algorithm at scale without committing massive files to version control, the tests use pre-computed `.genome` fixture files to verify outputs for the full dataset.
+The suite actively runs both implementations against the `micro` and `subset` datasets. To validate the algorithm at scale, the tests use pre-computed `.genome` fixture files to verify outputs for the full dataset.
 
-You can execute the test suite from the root directory using `pytest` from the root directory:
+You can execute the test suite from the root directory using `pytest`:
 
 `python3 -m pytest tests -v`
 
@@ -68,7 +67,7 @@ You can execute the test suite from the root directory using `pytest` from the r
 
 ### Accuracy Results
 
-Both the naive and optimized Python implementations were compared against the PLINK 1.9 ground truth on the full dataset (97 samples, ~900k SNPs, 4,656 individual pairs) using `benchmarking/accuracy.py`. The two implementations produce identical accuracy metrics:
+The accuracy of the Python implementation was validated by comparing its `.genome` output (ran on the full dataset) with PLINK 1.9's `.genome` output via `benchmarking/accuracy.py`. Both the naive and optimized Python implementations produced identical accuracy metrics:
 
 | Column  |       R² |      MAE | Max Error |
 | :------ | -------: | -------: | --------: |
@@ -78,7 +77,7 @@ Both the naive and optimized Python implementations were compared against the PL
 | PI_HAT  | 0.999999 | 0.000025 |   0.00005 |
 | Overall | 1.000000 | 0.000022 |   0.00005 |
 
-An R² of ~1.0 and near-zero MAE across all columns indicates that both Python implementations effectively match PLINK 1.9's IBD estimates. The maximum error of 0.00005 across all columns is due to PLINK rounding its `.genome` output to 4 decimal places.
+An R² of ~1.0 and near-zero MAE across all columns indicates that both Python implementations effectively match PLINK 1.9's IBD estimates. The maximum error of 0.00005 across all columns is likely due to PLINK rounding its `.genome` output to 4 decimal places.
 
 ### Runtime Results
 
@@ -112,9 +111,7 @@ The `benchmarking/accuracy.py` script compares a target `.genome` file against a
 python3 benchmarking/accuracy.py <ground_truth.genome> <target.genome>
 ```
 
-## Notes for Peer Reviewers
-
-### Project Structure
+## Project Structure
 
 ```
 ├── python_ibd              # CLI entry point
@@ -141,12 +138,3 @@ python3 benchmarking/accuracy.py <ground_truth.genome> <target.genome>
     ├── *.png               # Plots of Runtime and Per-stage breakdown
     └── *.log               # Per-stage timing logs from Python implementations
 ```
-
-### Possible Future Work and Challenges
-
-1. Add a section to discuss $R^2$ similarity between Python and PLINK 1.9 in README. (Tests validate this but no formal discussion yet.)
-2. Improve benchmarking:
-   - Compare PLINK vs Optimized approach with even larger datasets.
-   - More robust benchmarking (e.g. take average of multiple runs).
-   - Test the memory usuage of each method.
-3. Explore reducing the Python I/O bottleneck by testing other packages for reading `.bed` files.
