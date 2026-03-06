@@ -66,7 +66,21 @@ You can execute the test suite from the root directory using `pytest` from the r
 
 ## Benchmarking
 
-### Results
+### Accuracy Results
+
+Both the naive and optimized Python implementations were compared against the PLINK 1.9 ground truth on the full dataset (97 samples, ~900k SNPs, 4,656 individual pairs) using `benchmarking/accuracy.py`. The two implementations produce identical accuracy metrics:
+
+| Column  |       R² |      MAE | Max Error |
+| :------ | -------: | -------: | --------: |
+| Z0      | 1.000000 | 0.000025 |   0.00005 |
+| Z1      | 1.000000 | 0.000014 |   0.00005 |
+| Z2      | 0.999991 | 0.000025 |   0.00005 |
+| PI_HAT  | 0.999999 | 0.000025 |   0.00005 |
+| Overall | 1.000000 | 0.000022 |   0.00005 |
+
+An R² of ~1.0 and near-zero MAE across all columns indicates that both Python implementations effectively match PLINK 1.9's IBD estimates. The maximum error of 0.00005 across all columns is due to PLINK rounding its `.genome` output to 4 decimal places.
+
+### Runtime Results
 
 The benchmarks were ran on datahub.ucsd.edu (4 CPU, 16G RAM) against both a small dataset (10 samples, 2000 SNPs) and a larger dataset (97 samples, ~900k SNPs).
 
@@ -82,17 +96,21 @@ PLINK 1.9 (compiled C) completes the full dataset in about 1 second. The optimiz
 
 The breakdown reveals where each implementation spends its time. The naive implementation is dominated by the pairwise IBD computation (~99% of runtime), where a nested Python loop iterates over all 4,656 individual pairs and ~900k variants. The optimized implementation replaces this with matrix multiplications, reducing pairwise IBD to ~31% of runtime. Instead, file I/O (reading the `.bed` file and writing the `.genome` output) becomes the primary bottleneck at ~59%.
 
-### Running the Benchmark
+### Running the Benchmarks
 
-The `benchmark.sh` script times PLINK and both Python implementations (naive and optimized) on the subset and full datasets. It is intended to run on datahub.ucsd.edu only, since the full dataset (`~/public/ps2/ibd/ps2_ibd.lwk`) is only available there.
+The `benchmarking/runtime.sh` script times PLINK and both Python implementations (naive and optimized) on the subset and full datasets. It runs 6 benchmarks sequentially, writing results to `<output_directory>/results.txt` and preserving Python `.log` files for per-stage breakdown. It is intended to run on datahub.ucsd.edu only, since the full dataset (`~/public/ps2/ibd/ps2_ibd.lwk`) is only available there.
 
-_Note:_ A full benchmarking run takes upwards of 1 hour due to the naive implementation's loop-based approach on the full dataset (97 individuals, ~900k variants).
+_Note:_ A full run takes upwards of 1 hour due to the naive implementation.
 
 ```bash
-bash benchmark.sh <output_directory>
+bash benchmarking/runtime.sh <output_directory>
 ```
 
-This runs 6 benchmarks sequentially (PLINK, naive, and optimized on both subset and full datasets) and writes wall-clock timings to `<output_directory>/results.txt`. The Python `.log` files are preserved in the output directory for per-stage timing breakdown.
+The `benchmarking/accuracy.py` script compares a target `.genome` file against a ground truth, reporting R², mean absolute error, and max absolute error for each numeric column (Z0, Z1, Z2, PI_HAT).
+
+```bash
+python3 benchmarking/accuracy.py <ground_truth.genome> <target.genome>
+```
 
 ## Notes for Peer Reviewers
 
@@ -101,7 +119,6 @@ This runs 6 benchmarks sequentially (PLINK, naive, and optimized on both subset 
 ```
 ├── python_ibd              # CLI entry point
 ├── requirements.txt        # Python dependencies
-├── benchmark.sh            # Benchmarking script
 ├── src/
 │   ├── cli.py              # Argument parsing (--input, --out, --naive)
 │   ├── naive.py            # Non-optimized IBD computation (loop-based)
@@ -118,6 +135,8 @@ This runs 6 benchmarks sequentially (PLINK, naive, and optimized on both subset 
 │   ├── subset.*            # Subset dataset (10 samples, 2000 variants)
 │   └── plink.*.genome      # Expected PLINK outputs for each dataset
 └── benchmarking/
+    ├── runtime.sh          # Runtime benchmarking script
+    ├── accuracy.py         # Accuracy benchmarking script
     ├── results.txt         # Wall-clock timings from last benchmark run
     ├── *.png               # Plots of Runtime and Per-stage breakdown
     └── *.log               # Per-stage timing logs from Python implementations
