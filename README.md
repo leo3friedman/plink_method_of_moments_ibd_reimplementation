@@ -11,7 +11,7 @@ This project provides a Python implementation of the Methods of Moments algorith
 3. Create a virtual environment via `python -m venv .env`.
 4. Activate the environment using `source .env/bin/activate` for Unix/macOS or `.env\Scripts\activate` for Windows.
 5. Install dependencies with `pip install -r requirements.txt`.
-6. Grant execution privileges using `chmod +x python_ibd`.
+6. (Unix/macOS) Grant execution privileges using `chmod +x python_ibd`.
 7. Run a small test example with `./python_ibd --input data/subset --out python_ibd.subset`. The IBD output will be written to `python_ibd.subset.genome`.
 
 ## Usage
